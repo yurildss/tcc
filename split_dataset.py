@@ -75,69 +75,73 @@ for cls in sorted(os.listdir(INPUT_DIR)):
     if not os.path.isdir(cls_path):
         continue
 
-    all_files = [f for f in os.listdir(cls_path) if f.endswith(".csv")]
+    try:
+        all_files = [f for f in os.listdir(cls_path) if f.endswith(".csv")]
 
-    # Separa originais de aumentados
-    originais  = sorted([f for f in all_files if "_aug_" not in f])
-    aumentados = sorted([f for f in all_files if "_aug_" in f])
+        # Separa originais de aumentados
+        originais  = sorted([f for f in all_files if "_aug_" not in f])
+        aumentados = sorted([f for f in all_files if "_aug_" in f])
 
-    n_orig = len(originais)
-    n_aug  = len(aumentados)
+        n_orig = len(originais)
+        n_aug  = len(aumentados)
 
-    if n_orig == 0:
-        print(f"\n  {cls}: NENHUM ORIGINAL — pulando")
+        if n_orig == 0:
+            print(f"\n  {cls}: NENHUM ORIGINAL — pulando")
+            continue
+
+        # ---- Divide os ORIGINAIS em val e test ----
+        # Val e test devem ser exclusivamente originais para avaliação limpa
+        random.shuffle(originais)
+
+        n_val  = max(1, round(n_orig * VAL_RATIO))
+        n_test = max(1, round(n_orig * TEST_RATIO))
+
+        # Garante que sobra ao menos 1 para o treino
+        n_val  = min(n_val,  n_orig - 2)
+        n_test = min(n_test, n_orig - n_val - 1)
+
+        orig_val   = originais[:n_val]
+        orig_test  = originais[n_val:n_val + n_test]
+        orig_train = originais[n_val + n_test:]   # originais restantes vão pro treino
+
+        # ---- Train = originais restantes + TODOS os aumentados ----
+        train_files = orig_train + aumentados
+        random.shuffle(train_files)
+
+        # ---- Copia os arquivos ----
+        for f in train_files:
+            shutil.copy2(
+                os.path.join(cls_path, f),
+                os.path.join(OUTPUT_DIR, "train", cls, f)
+            )
+        for f in orig_val:
+            shutil.copy2(
+                os.path.join(cls_path, f),
+                os.path.join(OUTPUT_DIR, "val", cls, f)
+            )
+        for f in orig_test:
+            shutil.copy2(
+                os.path.join(cls_path, f),
+                os.path.join(OUTPUT_DIR, "test", cls, f)
+            )
+
+        resumo[cls] = {
+            'orig':  n_orig,
+            'aug':   n_aug,
+            'train': len(train_files),
+            'val':   len(orig_val),
+            'test':  len(orig_test),
+        }
+
+        print(f"\n  Classe {cls}:")
+        print(f"    Originais    : {n_orig:>6,}  |  Aumentados: {n_aug:>6,}")
+        print(f"    → Train      : {len(train_files):>6,}  "
+              f"({len(orig_train)} orig + {n_aug} aug)")
+        print(f"    → Val        : {len(orig_val):>6,}  (somente originais)")
+        print(f"    → Test       : {len(orig_test):>6,}  (somente originais)")
+    except Exception as exc:
+        print(f"[WARN] Classe '{cls}' falhou no split e foi ignorada: {exc}")
         continue
-
-    # ---- Divide os ORIGINAIS em val e test ----
-    # Val e test devem ser exclusivamente originais para avaliação limpa
-    random.shuffle(originais)
-
-    n_val  = max(1, round(n_orig * VAL_RATIO))
-    n_test = max(1, round(n_orig * TEST_RATIO))
-
-    # Garante que sobra ao menos 1 para o treino
-    n_val  = min(n_val,  n_orig - 2)
-    n_test = min(n_test, n_orig - n_val - 1)
-
-    orig_val   = originais[:n_val]
-    orig_test  = originais[n_val:n_val + n_test]
-    orig_train = originais[n_val + n_test:]   # originais restantes vão pro treino
-
-    # ---- Train = originais restantes + TODOS os aumentados ----
-    train_files = orig_train + aumentados
-    random.shuffle(train_files)
-
-    # ---- Copia os arquivos ----
-    for f in train_files:
-        shutil.copy2(
-            os.path.join(cls_path, f),
-            os.path.join(OUTPUT_DIR, "train", cls, f)
-        )
-    for f in orig_val:
-        shutil.copy2(
-            os.path.join(cls_path, f),
-            os.path.join(OUTPUT_DIR, "val", cls, f)
-        )
-    for f in orig_test:
-        shutil.copy2(
-            os.path.join(cls_path, f),
-            os.path.join(OUTPUT_DIR, "test", cls, f)
-        )
-
-    resumo[cls] = {
-        'orig':  n_orig,
-        'aug':   n_aug,
-        'train': len(train_files),
-        'val':   len(orig_val),
-        'test':  len(orig_test),
-    }
-
-    print(f"\n  Classe {cls}:")
-    print(f"    Originais    : {n_orig:>6,}  |  Aumentados: {n_aug:>6,}")
-    print(f"    → Train      : {len(train_files):>6,}  "
-          f"({len(orig_train)} orig + {n_aug} aug)")
-    print(f"    → Val        : {len(orig_val):>6,}  (somente originais)")
-    print(f"    → Test       : {len(orig_test):>6,}  (somente originais)")
 
 # =============================================================================
 # RELATÓRIO FINAL

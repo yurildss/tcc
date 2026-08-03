@@ -57,22 +57,28 @@ MAX_POR_CLASSE_POR_RECORD = {
 # =============================================================================
 
 print("Carregando CSV...")
-df = pd.read_csv(CSV_FILE)
+try:
+    df = pd.read_csv(CSV_FILE)
+except Exception as exc:
+    raise RuntimeError(f"Falha ao carregar o CSV '{CSV_FILE}': {exc}") from exc
 
 # Limpa nomes de colunas (remove espaços e aspas extras)
-df.columns = (
-    df.columns
-      .str.strip()
-      .str.replace(r"^['\"]|['\"]$", "", regex=True)
-)
+try:
+    df.columns = (
+        df.columns
+          .str.strip()
+          .str.replace(r"^['\"]|['\"]$", "", regex=True)
+    )
 
-# Substitui a anotação "/" por "B" — o caractere "/" quebra caminhos
-# de arquivo no Windows e é interpretado como separador de diretório.
-# Feito ANTES de qualquer processamento para garantir consistência.
-df['type'] = df['type'].replace('/', 'B')
+    # Substitui a anotação "/" por "B" — o caractere "/" quebra caminhos
+    # de arquivo no Windows e é interpretado como separador de diretório.
+    # Feito ANTES de qualquer processamento para garantir consistência.
+    df['type'] = df['type'].replace('/', 'B')
 
-# Garante ordenação por sample dentro de cada record
-df = df.sort_values(["record", "sample #"]).reset_index(drop=True)
+    # Garante ordenação por sample dentro de cada record
+    df = df.sort_values(["record", "sample #"]).reset_index(drop=True)
+except Exception as exc:
+    raise RuntimeError(f"Falha ao normalizar o CSV '{CSV_FILE}': {exc}") from exc
 
 print(f"Total de linhas  : {len(df):,}")
 print(f"Registros únicos : {df['record'].nunique()}")
@@ -159,37 +165,48 @@ for cls in CLASSES_ALVO:
 records = df['record'].unique()
 print(f"Processando {len(records)} registros...\n")
 
+failed_records = []
 for rec_idx, record_name in enumerate(sorted(records)):
-    df_record = df[df['record'] == record_name].copy()
+    try:
+        df_record = df[df['record'] == record_name].copy()
 
-    batimentos = extrair_batimentos(df_record, record_name)
+        batimentos = extrair_batimentos(df_record, record_name)
 
-    # Conta por classe neste registro (para aplicar o limite)
-    count_neste_record = defaultdict(int)
+        # Conta por classe neste registro (para aplicar o limite)
+        count_neste_record = defaultdict(int)
 
-    for bat in batimentos:
-        cls = bat['classe']
+        for bat in batimentos:
+            cls = bat['classe']
 
-        # Aplica limite por record
-        limite = MAX_POR_CLASSE_POR_RECORD.get(cls, None)
-        if limite is not None and count_neste_record[cls] >= limite:
-            skipped_max[cls] += 1
-            continue
+            # Aplica limite por record
+            limite = MAX_POR_CLASSE_POR_RECORD.get(cls, None)
+            if limite is not None and count_neste_record[cls] >= limite:
+                skipped_max[cls] += 1
+                continue
 
-        # Nome do arquivo
-        n_global = contadores[cls] + 1
-        fname    = f"{cls}_beat_{n_global}_{record_name}.csv"
-        fpath    = os.path.join(OUTPUT_DIR, cls, fname)
+            # Nome do arquivo
+            n_global = contadores[cls] + 1
+            fname    = f"{cls}_beat_{n_global}_{record_name}.csv"
+            fpath    = os.path.join(OUTPUT_DIR, cls, fname)
 
-        bat['segment'].to_csv(fpath, index=False)
+            bat['segment'].to_csv(fpath, index=False)
 
-        contadores[cls]          += 1
-        count_neste_record[cls]  += 1
+            contadores[cls]          += 1
+            count_neste_record[cls]  += 1
 
-    if (rec_idx + 1) % 10 == 0 or rec_idx == len(records) - 1:
-        total_salvo = sum(contadores.values())
-        print(f"  [{rec_idx+1:3d}/{len(records)}] {record_name:<20s} "
-              f"| salvo até agora: {total_salvo:,}")
+        if (rec_idx + 1) % 10 == 0 or rec_idx == len(records) - 1:
+            total_salvo = sum(contadores.values())
+            print(f"  [{rec_idx+1:3d}/{len(records)}] {record_name:<20s} "
+                  f"| salvo até agora: {total_salvo:,}")
+    except Exception as exc:
+        failed_records.append(record_name)
+        print(f"[WARN] Registro '{record_name}' falhou e foi ignorado: {exc}")
+        continue
+
+if failed_records:
+    print(f"\nRegistros ignorados com falha: {len(failed_records)}")
+    for r in failed_records[:10]:
+        print(f"  - {r}")
 
 # =============================================================================
 # RELATÓRIO FINAL
